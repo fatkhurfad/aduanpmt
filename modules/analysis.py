@@ -57,16 +57,7 @@ def page_analysis():
 
     st.markdown("---")
 
-    # --- 2. Info Dasar & Struktur Data ---
-    st.subheader("ℹ️ Struktur Data & Tipe Kolom")
-    buf = StringIO()
-    df.info(buf=buf)
-    s = buf.getvalue()
-    st.text(s)
-
-    st.markdown("---")
-
-    # --- 3. Statistik Deskriptif ---
+    # --- 2. Statistik Deskriptif ---
     st.subheader("📊 Statistik Deskriptif")
 
     # Statistik numerik
@@ -85,7 +76,7 @@ def page_analysis():
 
     st.markdown("---")
 
-    # --- 4. Analisis Nilai Hilang (Missing Values) ---
+    # --- 3. Analisis Nilai Hilang (Missing Values) ---
     st.subheader("🚨 Analisis Nilai Hilang")
     missing_count = df.isnull().sum()
     missing_pct = (missing_count / len(df) * 100).round(2)
@@ -115,7 +106,7 @@ def page_analysis():
 
     st.markdown("---")
 
-    # --- 5. Korelasi & Heatmap (hanya numerik) ---
+    # --- 4. Korelasi & Heatmap (hanya numerik) ---
     st.subheader("🔗 Korelasi Kolom Numerik")
     num_cols = df.select_dtypes(include=[np.number]).columns.tolist()
     if len(num_cols) >= 2:
@@ -131,7 +122,7 @@ def page_analysis():
 
     st.markdown("---")
 
-    # --- 6. Distribusi Kolom Numerik ---
+    # --- 5. Distribusi Kolom Numerik ---
     st.subheader("📈 Distribusi Kolom Numerik")
     if num_cols:
         col_num = st.selectbox("Pilih kolom numerik untuk analisis distribusi", num_cols)
@@ -172,7 +163,7 @@ def page_analysis():
 
     st.markdown("---")
 
-    # --- 7. Distribusi Kolom Kategorikal ---
+    # --- 6. Distribusi Kolom Kategorikal ---
     st.subheader("📊 Distribusi Kolom Kategorikal")
     if cat_cols:
         col_cat = st.selectbox("Pilih kolom kategorikal", cat_cols)
@@ -192,7 +183,7 @@ def page_analysis():
 
     st.markdown("---")
 
-    # --- 8. Ekspor Ringkasan Analisa ---
+    # --- 7. Ekspor Ringkasan Analisa ---
     st.subheader("⬇️ Unduh Ringkasan Analisa")
     # Daftar kolom dengan missing > 0%
     missing_cols = df_missing[df_missing["Missing (%)"] > 0]["Kolom"].tolist()
