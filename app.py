@@ -1,9 +1,9 @@
 import streamlit as st
 from modules.auth import show_login, show_logout
+from modules.explorer import page_explorer
 from modules.generate import page_generate
 from modules.dashboard import page_dashboard
 from modules.analysis import page_analysis
-from modules.explorer import page_explorer
 from modules.config import t
 
 def check_session_timeout():
