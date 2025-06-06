@@ -2,6 +2,7 @@ import streamlit as st
 from modules.auth import show_login, show_logout
 from modules.generate import page_generate
 from modules.dashboard import page_dashboard
+from modules.analysis import page_analysis
 from modules.config import t
 
 def check_session_timeout():
@@ -27,12 +28,21 @@ def show_main_app():
     st.session_state.lang = lang
 
     st.sidebar.title("Menu")
-    page = st.sidebar.radio("Navigasi", [t("dashboard_title", st.session_state.lang), t("generate_title", st.session_state.lang)])
+    page = st.sidebar.radio(
+        "Navigasi",
+        [
+            t("dashboard_title", st.session_state.lang),
+            t("generate_title", st.session_state.lang),
+            t("analysis_title", st.session_state.lang),
+        ],
+    )
 
     if page == t("dashboard_title", st.session_state.lang):
         page_dashboard()
-    else:
+    elif page == t("generate_title", st.session_state.lang):
         page_generate()
+    else:
+        page_analysis()
 
 if __name__ == "__main__":
     if "login_state" not in st.session_state:
@@ -48,4 +58,4 @@ if __name__ == "__main__":
     elif st.session_state.login_state:
         show_main_app()
     else:
-        show_login(t)
+        show_login()
