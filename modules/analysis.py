@@ -3,42 +3,42 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from io import BytesIO
+from io import BytesIO, StringIO
 
 from modules.config import t
 
-# Matplotlib & Seaborn styling (tetap pakai default Matplotlib untuk pemrosesan)
+# Tetap gunakan style default Matplotlib/Seaborn
 sns.set_style("whitegrid")
 
 
 def page_analysis():
     st.title(t("analysis_title"))
 
-    file_uploader = st.file_uploader(t("upload_data"), type=["xlsx", "csv"])
-    if not file_uploader:
+    data_file = st.file_uploader(t("upload_data"), type=["xlsx", "csv"])
+    if not data_file:
         st.info(t("upload_first"))
         return
 
     # --- 1. Pilih Sheet (jika XLSX) ---
-    if file_uploader.name.endswith(".xlsx"):
+    if data_file.name.endswith(".xlsx"):
         try:
-            excel_obj = pd.ExcelFile(file_uploader)
-            sheet_names = excel_obj.sheet_names  # daftar sheet
+            excel_obj = pd.ExcelFile(data_file)
+            sheet_names = excel_obj.sheet_names  # Daftar nama sheet
         except Exception as e:
             st.error(f"Error membaca file Excel: {e}")
             return
 
         selected_sheet = st.selectbox("Pilih Sheet untuk Analisis", sheet_names)
         try:
-            df = pd.read_excel(file_uploader, sheet_name=selected_sheet)
+            df = pd.read_excel(data_file, sheet_name=selected_sheet)
         except Exception as e:
             st.error(f"Error membaca sheet '{selected_sheet}': {e}")
             return
 
     else:
-        # Langsung baca CSV
+        # Baca CSV secara langsung
         try:
-            df = pd.read_csv(file_uploader)
+            df = pd.read_csv(data_file)
         except Exception as e:
             st.error(f"Error membaca file CSV: {e}")
             return
@@ -59,9 +59,9 @@ def page_analysis():
 
     # --- 2. Info Dasar & Struktur Data ---
     st.subheader("ℹ️ Struktur Data & Tipe Kolom")
-    buf = BytesIO()
+    buf = StringIO()
     df.info(buf=buf)
-    s = buf.getvalue().decode()
+    s = buf.getvalue()
     st.text(s)
 
     st.markdown("---")
@@ -97,15 +97,21 @@ def page_analysis():
     st.dataframe(df_missing)
 
     # Plot missingness bar chart
-    fig_mis, ax_mis = plt.subplots(figsize=(6, min(0.5 * len(df_missing), 8)))
-    sns.barplot(
-        x="Missing (%)", y="Kolom", data=df_missing[df_missing["Missing (%)"] > 0],
-        palette="Reds_r", ax=ax_mis
-    )
-    ax_mis.set_xlabel("Persentase Nilai Hilang (%)")
-    ax_mis.set_ylabel("Kolom")
-    ax_mis.set_title("Persentase Nilai Hilang per Kolom")
-    st.pyplot(fig_mis)
+    mis_nonzero = df_missing[df_missing["Missing (%)"] > 0]
+    if not mis_nonzero.empty:
+        fig_mis, ax_mis = plt.subplots(figsize=(6, min(0.5 * len(mis_nonzero), 8)))
+        sns.barplot(
+            x="Missing (%)", y="Kolom",
+            data=mis_nonzero,
+            palette="Reds_r",
+            ax=ax_mis
+        )
+        ax_mis.set_xlabel("Persentase Nilai Hilang (%)")
+        ax_mis.set_ylabel("Kolom")
+        ax_mis.set_title("Persentase Nilai Hilang per Kolom")
+        st.pyplot(fig_mis)
+    else:
+        st.info("Tidak ada nilai hilang pada data.")
 
     st.markdown("---")
 
@@ -132,32 +138,35 @@ def page_analysis():
         bins = st.slider("Jumlah Bin Histogram", min_value=5, max_value=100, value=30)
 
         col_data = df[col_num].dropna()
-        fig_hist, ax_hist = plt.subplots()
-        ax_hist.hist(col_data, bins=bins, color="skyblue", edgecolor="black")
-        ax_hist.set_title(f"Histogram: {col_num}")
-        ax_hist.set_xlabel(col_num)
-        ax_hist.set_ylabel("Frekuensi")
-        st.pyplot(fig_hist)
+        if not col_data.empty:
+            fig_hist, ax_hist = plt.subplots()
+            ax_hist.hist(col_data, bins=bins, color="skyblue", edgecolor="black")
+            ax_hist.set_title(f"Histogram: {col_num}")
+            ax_hist.set_xlabel(col_num)
+            ax_hist.set_ylabel("Frekuensi")
+            st.pyplot(fig_hist)
 
-        # Boxplot
-        fig_box, ax_box = plt.subplots()
-        sns.boxplot(x=col_data, ax=ax_box, color="lightgreen")
-        ax_box.set_title(f"Boxplot: {col_num}")
-        st.pyplot(fig_box)
+            # Boxplot
+            fig_box, ax_box = plt.subplots()
+            sns.boxplot(x=col_data, ax=ax_box, color="lightgreen")
+            ax_box.set_title(f"Boxplot: {col_num}")
+            st.pyplot(fig_box)
 
-        # Analisis Outlier Sederhana (IQR)
-        Q1 = col_data.quantile(0.25)
-        Q3 = col_data.quantile(0.75)
-        IQR = Q3 - Q1
-        lower_bound = Q1 - 1.5 * IQR
-        upper_bound = Q3 + 1.5 * IQR
-        outliers = col_data[(col_data < lower_bound) | (col_data > upper_bound)]
-        st.markdown(
-            f"**Outlier (Nilai < {lower_bound.round(2)} atau > {upper_bound.round(2)}):** "
-            f"{len(outliers)} nilai"
-        )
-        if not outliers.empty:
-            st.write(outliers.values[:10])  # tampilkan 10 outlier pertama
+            # Analisis Outlier Sederhana (IQR)
+            Q1 = col_data.quantile(0.25)
+            Q3 = col_data.quantile(0.75)
+            IQR = Q3 - Q1
+            lower_bound = Q1 - 1.5 * IQR
+            upper_bound = Q3 + 1.5 * IQR
+            outliers = col_data[(col_data < lower_bound) | (col_data > upper_bound)]
+            st.markdown(
+                f"**Outlier (Nilai < {lower_bound.round(2)} atau > {upper_bound.round(2)}):** "
+                f"{len(outliers)} nilai"
+            )
+            if not outliers.empty:
+                st.write(outliers.values[:10])  # tampilkan 10 outlier pertama
+        else:
+            st.info(f"Kolom {col_num} hanya berisi nilai kosong.")
     else:
         st.info("Tidak ada kolom numerik untuk distribusi.")
 
@@ -179,21 +188,30 @@ def page_analysis():
         ax_cat.set_title(f"Top {top_n} Kategori: {col_cat}")
         st.pyplot(fig_cat)
     else:
-        st.info("Tidak ada kolom kategorikal untuk ditampilkan.")
+        st.info("Tidak ada kolom kategorikal untuk dianalisa.")
 
     st.markdown("---")
 
     # --- 8. Ekspor Ringkasan Analisa ---
     st.subheader("⬇️ Unduh Ringkasan Analisa")
+    # Daftar kolom dengan missing > 0%
+    missing_cols = df_missing[df_missing["Missing (%)"] > 0]["Kolom"].tolist()
+    missing_cols_str = ", ".join(missing_cols) if missing_cols else "Tidak ada"
+
     summary_df = pd.DataFrame({
         "Deskripsi": [
-            "Total Baris", "Total Kolom", "Jumlah Kolom Numerik",
-            "Jumlah Kolom Kategorikal", "Kolom dengan Nilai Hilang (>0%)"
+            "Total Baris",
+            "Total Kolom",
+            "Jumlah Kolom Numerik",
+            "Jumlah Kolom Kategorikal",
+            "Kolom dengan Nilai Hilang (>0%)"
         ],
         "Nilai": [
-            len(df), len(df.columns), len(num_cols),
+            len(df),
+            len(df.columns),
+            len(num_cols),
             len(cat_cols),
-            ", ".join(df_missing[df_missing["Missing (%)"] > 0]["Kolom"].tolist()) or "Tidak ada"
+            missing_cols_str
         ]
     })
     csv_summary = summary_df.to_csv(index=False).encode("utf-8")
