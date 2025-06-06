@@ -183,7 +183,51 @@ def page_analysis():
 
     st.markdown("---")
 
-    # --- 7. Ekspor Ringkasan Analisa ---
+    # --- 7. Pivot Table ---
+    st.subheader("🧮 Pivot Table")
+    all_columns = df.columns.tolist()
+    if all_columns:
+        idx_cols = st.multiselect("Pilih Kolom untuk Index (Baris)", all_columns, default=all_columns[:1])
+        col_pivot = st.multiselect("Pilih Kolom untuk Columns (Kolom)", all_columns, default=all_columns[1:2])
+        val_cols = st.multiselect("Pilih Kolom Numerik untuk Values", num_cols, default=num_cols[:1])
+
+        agg_funcs = {
+            "Sum": "sum",
+            "Mean": "mean",
+            "Count": "count",
+            "Min": "min",
+            "Max": "max"
+        }
+        agg_choice = st.selectbox("Pilih Fungsi Agregasi", list(agg_funcs.keys()), index=0)
+        aggfunc = agg_funcs[agg_choice]
+
+        if idx_cols and col_pivot and val_cols:
+            try:
+                pivot_df = pd.pivot_table(
+                    df,
+                    index=idx_cols,
+                    columns=col_pivot,
+                    values=val_cols,
+                    aggfunc=aggfunc,
+                    fill_value=0
+                )
+                st.dataframe(pivot_df)
+                # Unduh pivot sebagai CSV
+                csv_pivot = pivot_df.to_csv(index=True).encode("utf-8")
+                st.download_button(
+                    "⬇️ Unduh Pivot (CSV)",
+                    data=csv_pivot,
+                    file_name="pivot_table.csv",
+                    mime="text/csv",
+                )
+            except Exception as e:
+                st.error(f"Gagal membuat Pivot Table: {e}")
+        else:
+            st.info("Pilih setidaknya satu kolom Index, kolom Columns, dan kolom Values.")
+
+    st.markdown("---")
+
+    # --- 8. Ekspor Ringkasan Analisa ---
     st.subheader("⬇️ Unduh Ringkasan Analisa")
     # Daftar kolom dengan missing > 0%
     missing_cols = df_missing[df_missing["Missing (%)"] > 0]["Kolom"].tolist()
