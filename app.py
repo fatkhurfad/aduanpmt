@@ -18,7 +18,7 @@ def show_main_app():
     check_session_timeout()
     show_logout()
 
-    st.sidebar.title(t("choose_language", st.session_state.lang))
+    st.sidebar.title(t("choose_language"))
     lang = st.sidebar.selectbox(
         "",
         ["id", "en"],
@@ -31,15 +31,15 @@ def show_main_app():
     page = st.sidebar.radio(
         "Navigasi",
         [
-            t("dashboard_title", st.session_state.lang),
-            t("generate_title", st.session_state.lang),
-            t("analysis_title", st.session_state.lang),
+            t("dashboard_title"),
+            t("generate_title"),
+            t("analysis_title"),
         ],
     )
 
-    if page == t("dashboard_title", st.session_state.lang):
+    if page == t("dashboard_title"):
         page_dashboard()
-    elif page == t("generate_title", st.session_state.lang):
+    elif page == t("generate_title"):
         page_generate()
     else:
         page_analysis()
@@ -49,10 +49,11 @@ if __name__ == "__main__":
         st.session_state.login_state = False
     if "lang" not in st.session_state:
         st.session_state.lang = "id"
+
     if st.session_state.get("logout_message", False):
-        st.title(t("logout_msg", st.session_state.lang))
-        st.markdown(t("logout_submsg", st.session_state.lang))
-        if st.button(t("back_login", st.session_state.lang)):
+        st.title(t("logout_msg"))
+        st.markdown(t("logout_submsg"))
+        if st.button(t("back_login")):
             st.session_state.logout_message = False
             st.experimental_rerun()
     elif st.session_state.login_state:
