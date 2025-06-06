@@ -1,6 +1,0 @@
-streamlit
-pandas
-docxtpl
-python-docx
-matplotlib
-openpyxl
