@@ -1,26 +1,26 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
+import plotly.express as px
+import plotly.graph_objects as go
 from io import BytesIO, StringIO
 
 from modules.config import t
 
-# Tetap gunakan style default Matplotlib/Seaborn
+# Jika ingin seaborn styling untuk Matplotlib juga, tapi di sini kita fokus Plotly
+import seaborn as sns
 sns.set_style("whitegrid")
 
 
 def page_analysis():
     st.title(t("analysis_title"))
 
-    # Upload file terlebih dahulu
+    # ----- Upload dan Pilih Sheet -----
     data_file = st.file_uploader(t("upload_data"), type=["xlsx", "csv"])
     if not data_file:
         st.info(t("upload_first"))
         return
 
-    # Jika XLSX, tampilkan pilihan sheet
     if data_file.name.endswith(".xlsx"):
         try:
             excel_obj = pd.ExcelFile(data_file)
@@ -29,7 +29,7 @@ def page_analysis():
             st.error(f"Error membaca file Excel: {e}")
             return
 
-        selected_sheet = st.selectbox("Pilih Sheet untuk Analisis", sheet_names)
+        selected_sheet = st.selectbox("📑 Pilih Sheet untuk Analisis", sheet_names)
         try:
             df = pd.read_excel(data_file, sheet_name=selected_sheet)
         except Exception as e:
@@ -42,149 +42,153 @@ def page_analysis():
             st.error(f"Error membaca file CSV: {e}")
             return
 
-    # Simpan ringkasan missing dan tipe kolom untuk digunakan di beberapa submenu
-    missing_count = df.isnull().sum()
-    missing_pct = (missing_count / len(df) * 100).round(2)
+    # ----- Sidebar Filters (mirip slicer di Power BI) -----
+    st.sidebar.markdown("## 🔍 Filter Data")
+    # Contoh filter: pilih kolom, nilai tertentu
+    filter_cols = df.columns.tolist()
+    with st.sidebar.expander("Filter Baris:"):
+        selected_filters = {}
+        for col in filter_cols:
+            if df[col].nunique() <= 10:  # hanya kolom dengan kategori terbatas
+                vals = st.sidebar.multiselect(
+                    f"{col}", options=df[col].dropna().unique().tolist(), default=None
+                )
+                if vals:
+                    selected_filters[col] = vals
+
+    # Terapkan filter
+    df_filtered = df.copy()
+    for col, vals in selected_filters.items():
+        df_filtered = df_filtered[df_filtered[col].isin(vals)]
+
+    # ----- Hitung statistik dasar sekali (digunakan di banyak tab) -----
+    total_rows = len(df_filtered)
+    total_cols = len(df_filtered.columns)
+    num_cols = df_filtered.select_dtypes(include=[np.number]).columns.tolist()
+    cat_cols = df_filtered.select_dtypes(include=["object", "category"]).columns.tolist()
+
+    # Missing values summary
+    missing_count = df_filtered.isnull().sum()
+    missing_pct = (missing_count / total_rows * 100).round(2)
     df_missing = pd.DataFrame({
-        "Kolom": df.columns,
+        "Kolom": df_filtered.columns,
         "Missing Count": missing_count.values,
         "Missing (%)": missing_pct.values
     }).sort_values(by="Missing (%)", ascending=False)
 
-    num_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-    cat_cols = df.select_dtypes(include=["object", "category"]).columns.tolist()
+    # ----- Tab Layout (mirip page di Power BI) -----
+    tabs = st.tabs([
+        "📋 Overview",
+        "🔍 Missing Values",
+        "🔗 Korelasi",
+        "📈 Distribusi Numerik",
+        "📊 Distribusi Kategorikal",
+        "🧮 Pivot Table"
+    ])
 
-    # --- Sub-menu ---
-    submenu = st.radio(
-        "Pilih Bagian Analisa:",
-        (
-            "Ringkasan Data",
-            "Statistik Deskriptif",
-            "Missing Values",
-            "Korelasi Numerik",
-            "Distribusi Numerik",
-            "Distribusi Kategorikal",
-            "Pivot Table",
-            "Ekspor Ringkasan",
-        ),
-        index=0,
-    )
+    # -------------------- Tab 1: Overview --------------------
+    with tabs[0]:
+        st.subheader("📋 Ringkasan Data")
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Total Baris", total_rows)
+        col2.metric("Total Kolom", total_cols)
+        col3.metric("Kolom Numerik", len(num_cols))
 
-    st.markdown("---")
+        col4, col5 = st.columns(2)
+        col4.metric("Kolom Kategorikal", len(cat_cols))
+        col5.metric("Kolom Hilang (>0%)", (df_missing["Missing (%)"] > 0).sum())
 
-    # 1. Ringkasan Data
-    if submenu == "Ringkasan Data":
-        st.subheader("ℹ️ Ringkasan Data")
-        st.success(f"Data berhasil dimuat: {len(df)} baris, {len(df.columns)} kolom.")
-        st.dataframe(df.head(10))
+        st.markdown("---")
+        st.subheader("🔎 Preview Data (10 Baris Pertama)")
+        st.dataframe(df_filtered.head(10), use_container_width=True)
 
-        csv_head = df.head(100).to_csv(index=False).encode("utf-8")
+        # Tombol unduh seluruh data yang sudah difilter
+        csv_all = df_filtered.to_csv(index=False).encode("utf-8")
         st.download_button(
-            "⬇️ Unduh 100 Baris Pertama (CSV)",
-            data=csv_head,
-            file_name="data_head_100.csv",
+            "⬇️ Unduh Semua Data (CSV)",
+            data=csv_all,
+            file_name="data_filtered.csv",
             mime="text/csv",
         )
 
-    # 2. Statistik Deskriptif
-    elif submenu == "Statistik Deskriptif":
-        st.subheader("📊 Statistik Deskriptif")
-
-        # Numerik
-        st.markdown("**Statistik Numerik**")
-        if num_cols:
-            desc_num = df[num_cols].describe().T
-            st.dataframe(desc_num)
-        else:
-            st.info("Tidak ada kolom numerik.")
-
-        # Kategorikal
-        st.markdown("**Statistik Kategorikal**")
-        if cat_cols:
-            desc_cat = df[cat_cols].describe().T
-            st.dataframe(desc_cat)
-        else:
-            st.info("Tidak ada kolom kategorikal.")
-
-    # 3. Missing Values
-    elif submenu == "Missing Values":
+    # -------------------- Tab 2: Missing Values --------------------
+    with tabs[1]:
         st.subheader("🚨 Analisis Nilai Hilang")
-        st.dataframe(df_missing)
+        st.dataframe(df_missing, use_container_width=True)
 
         mis_nonzero = df_missing[df_missing["Missing (%)"] > 0]
         if not mis_nonzero.empty:
-            fig_mis, ax_mis = plt.subplots(
-                figsize=(6, min(0.5 * len(mis_nonzero), 8))
-            )
-            sns.barplot(
+            fig_mis = px.bar(
+                mis_nonzero,
                 x="Missing (%)",
                 y="Kolom",
-                data=mis_nonzero,
-                palette="Reds_r",
-                ax=ax_mis,
+                orientation="h",
+                title="Persentase Nilai Hilang per Kolom",
+                text="Missing (%)",
+                color="Missing (%)",
+                color_continuous_scale="Reds",
             )
-            ax_mis.set_xlabel("Persentase Nilai Hilang (%)")
-            ax_mis.set_ylabel("Kolom")
-            ax_mis.set_title("Persentase Nilai Hilang per Kolom")
-            st.pyplot(fig_mis)
+            fig_mis.update_layout(yaxis=dict(autorange="reversed"), height=400)
+            st.plotly_chart(fig_mis, use_container_width=True)
         else:
             st.info("Tidak ada nilai hilang pada data.")
 
-    # 4. Korelasi Numerik
-    elif submenu == "Korelasi Numerik":
+    # -------------------- Tab 3: Korelasi --------------------
+    with tabs[2]:
         st.subheader("🔗 Korelasi Kolom Numerik")
         if len(num_cols) >= 2:
-            corr = df[num_cols].corr()
-            st.dataframe(corr.round(2))
+            corr = df_filtered[num_cols].corr()
 
-            fig_corr, ax_corr = plt.subplots(figsize=(8, 6))
-            sns.heatmap(
+            st.dataframe(corr.round(2), use_container_width=True)
+
+            fig_corr = px.imshow(
                 corr,
-                annot=True,
-                cmap="coolwarm",
-                linewidths=0.5,
-                ax=ax_corr,
+                text_auto=".2f",
+                aspect="auto",
+                color_continuous_scale="RdBu_r",
+                title="Heatmap Korelasi Numerik",
             )
-            ax_corr.set_title("Heatmap Korelasi Numerik")
-            st.pyplot(fig_corr)
+            fig_corr.update_layout(height=500)
+            st.plotly_chart(fig_corr, use_container_width=True)
         else:
             st.info("Data tidak memiliki cukup kolom numerik untuk korelasi.")
 
-    # 5. Distribusi Numerik
-    elif submenu == "Distribusi Numerik":
+    # -------------------- Tab 4: Distribusi Numerik --------------------
+    with tabs[3]:
         st.subheader("📈 Distribusi Kolom Numerik")
         if num_cols:
-            col_num = st.selectbox(
-                "Pilih kolom numerik untuk analisis distribusi", num_cols
-            )
-            bins = st.slider(
-                "Jumlah Bin Histogram", min_value=5, max_value=100, value=30
-            )
-            col_data = df[col_num].dropna()
+            col_num = st.selectbox("🏷️ Pilih Kolom Numerik", num_cols, key="dist_num")
+            bins = st.slider("Jumlah Bin Histogram", min_value=5, max_value=100, value=30, key="dist_bins")
 
+            col_data = df_filtered[col_num].dropna()
             if not col_data.empty:
-                fig_hist, ax_hist = plt.subplots()
-                ax_hist.hist(col_data, bins=bins, color="skyblue", edgecolor="black")
-                ax_hist.set_title(f"Histogram: {col_num}")
-                ax_hist.set_xlabel(col_num)
-                ax_hist.set_ylabel("Frekuensi")
-                st.pyplot(fig_hist)
+                # Histogram interaktif
+                fig_hist = px.histogram(
+                    col_data,
+                    nbins=bins,
+                    title=f"Histogram: {col_num}",
+                    labels={ "value": col_num },
+                )
+                st.plotly_chart(fig_hist, use_container_width=True)
 
-                fig_box, ax_box = plt.subplots()
-                sns.boxplot(x=col_data, ax=ax_box, color="lightgreen")
-                ax_box.set_title(f"Boxplot: {col_num}")
-                st.pyplot(fig_box)
+                # Boxplot
+                fig_box = px.box(
+                    col_data,
+                    points="all",
+                    title=f"Boxplot: {col_num}",
+                    labels={ "value": col_num },
+                )
+                st.plotly_chart(fig_box, use_container_width=True)
 
+                # Outlier (IQR)
                 Q1 = col_data.quantile(0.25)
                 Q3 = col_data.quantile(0.75)
                 IQR = Q3 - Q1
                 lower_bound = Q1 - 1.5 * IQR
                 upper_bound = Q3 + 1.5 * IQR
-                outliers = col_data[
-                    (col_data < lower_bound) | (col_data > upper_bound)
-                ]
+                outliers = col_data[(col_data < lower_bound) | (col_data > upper_bound)]
                 st.markdown(
-                    f"**Outlier (Nilai < {lower_bound.round(2)} atau > {upper_bound.round(2)}):** "
+                    f"**Outlier (Nilai < {lower_bound:.2f} atau > {upper_bound:.2f}):** "
                     f"{len(outliers)} nilai"
                 )
                 if not outliers.empty:
@@ -194,112 +198,101 @@ def page_analysis():
         else:
             st.info("Tidak ada kolom numerik untuk distribusi.")
 
-    # 6. Distribusi Kategorikal
-    elif submenu == "Distribusi Kategorikal":
+    # -------------------- Tab 5: Distribusi Kategorikal --------------------
+    with tabs[4]:
         st.subheader("📊 Distribusi Kolom Kategorikal")
         if cat_cols:
-            col_cat = st.selectbox("Pilih kolom kategorikal", cat_cols)
+            col_cat = st.selectbox("🏷️ Pilih Kolom Kategorikal", cat_cols, key="dist_cat")
             top_n = st.slider(
-                "Tampilkan Top N Kategori Teratas",
-                min_value=1,
-                max_value=20,
-                value=5,
+                "Tampilkan Top N Kategori Teratas", min_value=1, max_value=20, value=5, key="dist_topn"
             )
-            value_counts = df[col_cat].value_counts(dropna=False).head(top_n)
+            value_counts = df_filtered[col_cat].value_counts(dropna=False).head(top_n)
             df_cat = pd.DataFrame({col_cat: value_counts.index, "Count": value_counts.values})
-            st.dataframe(df_cat)
+            st.dataframe(df_cat, use_container_width=True)
 
-            fig_cat, ax_cat = plt.subplots(
-                figsize=(6, min(0.5 * top_n, 6))
+            fig_cat = px.bar(
+                df_cat,
+                x="Count",
+                y=col_cat,
+                orientation="h",
+                title=f"Top {top_n} Kategori: {col_cat}",
+                labels={ "Count": "Jumlah", col_cat: col_cat },
+                color="Count",
+                color_continuous_scale="Viridis",
             )
-            sns.barplot(
-                x=value_counts.values, y=value_counts.index, palette="viridis", ax=ax_cat
-            )
-            ax_cat.set_xlabel("Count")
-            ax_cat.set_ylabel(col_cat)
-            ax_cat.set_title(f"Top {top_n} Kategori: {col_cat}")
-            st.pyplot(fig_cat)
+            fig_cat.update_layout(yaxis=dict(autorange="reversed"), height=400)
+            st.plotly_chart(fig_cat, use_container_width=True)
         else:
             st.info("Tidak ada kolom kategorikal untuk dianalisa.")
 
-    # 7. Pivot Table
-    elif submenu == "Pivot Table":
+    # -------------------- Tab 6: Pivot Table --------------------
+    with tabs[5]:
         st.subheader("🧮 Pivot Table")
-        all_columns = df.columns.tolist()
-        if all_columns:
-            idx_cols = st.multiselect(
-                "Pilih Kolom untuk Index (Baris)", all_columns, default=all_columns[:1]
-            )
-            col_pivot = st.multiselect(
-                "Pilih Kolom untuk Columns (Kolom)", all_columns, default=all_columns[1:2]
-            )
-            val_cols = st.multiselect(
-                "Pilih Kolom Numerik untuk Values", num_cols, default=num_cols[:1]
-            )
+        all_columns = df_filtered.columns.tolist()
 
-            agg_funcs = {
-                "Sum": "sum",
-                "Mean": "mean",
-                "Count": "count",
-                "Min": "min",
-                "Max": "max",
-            }
-            agg_choice = st.selectbox("Pilih Fungsi Agregasi", list(agg_funcs.keys()), index=0)
-            aggfunc = agg_funcs[agg_choice]
-
-            if idx_cols and col_pivot and val_cols:
-                try:
-                    pivot_df = pd.pivot_table(
-                        df,
-                        index=idx_cols,
-                        columns=col_pivot,
-                        values=val_cols,
-                        aggfunc=aggfunc,
-                        fill_value=0,
-                    )
-                    st.dataframe(pivot_df)
-                    csv_pivot = pivot_df.to_csv(index=True).encode("utf-8")
-                    st.download_button(
-                        "⬇️ Unduh Pivot (CSV)",
-                        data=csv_pivot,
-                        file_name="pivot_table.csv",
-                        mime="text/csv",
-                    )
-                except Exception as e:
-                    st.error(f"Gagal membuat Pivot Table: {e}")
-            else:
-                st.info("Pilih setidaknya satu kolom Index, kolom Columns, dan kolom Values.")
-
-    # 8. Ekspor Ringkasan
-    elif submenu == "Ekspor Ringkasan":
-        st.subheader("⬇️ Unduh Ringkasan Analisa")
-        missing_cols = df_missing[df_missing["Missing (%)"] > 0]["Kolom"].tolist()
-        missing_cols_str = ", ".join(missing_cols) if missing_cols else "Tidak ada"
-
-        summary_df = pd.DataFrame(
-            {
-                "Deskripsi": [
-                    "Total Baris",
-                    "Total Kolom",
-                    "Jumlah Kolom Numerik",
-                    "Jumlah Kolom Kategorikal",
-                    "Kolom dengan Nilai Hilang (>0%)",
-                ],
-                "Nilai": [
-                    len(df),
-                    len(df.columns),
-                    len(num_cols),
-                    len(cat_cols),
-                    missing_cols_str,
-                ],
-            }
+        idx_cols = st.multiselect(
+            "📂 Pilih Kolom untuk Index (Baris)", all_columns, default=all_columns[:1], key="pivot_idx"
         )
-        csv_summary = summary_df.to_csv(index=False).encode("utf-8")
-        st.download_button(
-            "⬇️ Unduh Ringkasan Dasar (CSV)",
-            data=csv_summary,
-            file_name="ringkasan_analisa.csv",
-            mime="text/csv",
+        col_pivot = st.multiselect(
+            "📑 Pilih Kolom untuk Columns", all_columns, default=all_columns[1:2], key="pivot_cols"
         )
-        st.markdown("---")
-        st.markdown("✅ Analisa Data Lengkap Selesai.")
+        val_cols = st.multiselect(
+            "🔢 Pilih Kolom Numerik untuk Values", num_cols, default=num_cols[:1], key="pivot_vals"
+        )
+
+        agg_funcs = {
+            "Sum": "sum",
+            "Mean": "mean",
+            "Count": "count",
+            "Min": "min",
+            "Max": "max",
+        }
+        agg_choice = st.selectbox("⚙️ Pilih Fungsi Agregasi", list(agg_funcs.keys()), index=0, key="pivot_agg")
+        aggfunc = agg_funcs[agg_choice]
+
+        if idx_cols and col_pivot and val_cols:
+            try:
+                pivot_df = pd.pivot_table(
+                    df_filtered,
+                    index=idx_cols,
+                    columns=col_pivot,
+                    values=val_cols,
+                    aggfunc=aggfunc,
+                    fill_value=0,
+                )
+                st.dataframe(pivot_df, use_container_width=True)
+
+                # Unduh pivot
+                csv_pivot = pivot_df.to_csv(index=True).encode("utf-8")
+                st.download_button(
+                    "⬇️ Unduh Pivot (CSV)",
+                    data=csv_pivot,
+                    file_name="pivot_table.csv",
+                    mime="text/csv",
+                )
+
+                # Pilihan visualisasi pivot sederhana
+                if len(val_cols) == 1 and len(col_pivot) == 1:
+                    st.markdown("---")
+                    st.subheader("📊 Visualisasi Pivot (Chart)")
+                    pivot_chart = pivot_df[val_cols[0]]
+                    # Flatten MultiIndex untuk chart
+                    pivot_chart = pivot_chart.reset_index()
+                    pivot_chart.columns = idx_cols + [col_pivot[0], val_cols[0]]
+                    fig_pivot = px.bar(
+                        pivot_chart,
+                        x=idx_cols,
+                        y=val_cols[0],
+                        color=col_pivot[0],
+                        barmode="group",
+                        title="Visualisasi Pivot Table",
+                    )
+                    st.plotly_chart(fig_pivot, use_container_width=True)
+            except Exception as e:
+                st.error(f"Gagal membuat Pivot Table: {e}")
+        else:
+            st.info("Pilih setidaknya satu kolom Index, Columns, dan Values.")
+
+    # -------------------- Footer Akhir --------------------
+    st.markdown("---")
+    st.caption("✅ Analisa Data Lengkap (Power BI-Style) Selesai.")
