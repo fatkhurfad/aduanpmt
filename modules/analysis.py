@@ -14,25 +14,39 @@ sns.set_style("whitegrid")
 def page_analysis():
     st.title(t("analysis_title"))
 
-    data_file = st.file_uploader(t("upload_data"), type=["xlsx", "csv"])
-    if not data_file:
+    file_uploader = st.file_uploader(t("upload_data"), type=["xlsx", "csv"])
+    if not file_uploader:
         st.info(t("upload_first"))
         return
 
-    # --- 1. Baca Data ---
-    try:
-        if data_file.name.endswith(".csv"):
-            df = pd.read_csv(data_file)
-        else:
-            df = pd.read_excel(data_file)
-    except Exception as e:
-        st.error(f"Error membaca file: {e}")
-        return
+    # --- 1. Pilih Sheet (jika XLSX) ---
+    if file_uploader.name.endswith(".xlsx"):
+        try:
+            excel_obj = pd.ExcelFile(file_uploader)
+            sheet_names = excel_obj.sheet_names  # daftar sheet
+        except Exception as e:
+            st.error(f"Error membaca file Excel: {e}")
+            return
 
-    st.success(f"Data berhasil dimuat, {len(df)} baris, {len(df.columns)} kolom.")
+        selected_sheet = st.selectbox("Pilih Sheet untuk Analisis", sheet_names)
+        try:
+            df = pd.read_excel(file_uploader, sheet_name=selected_sheet)
+        except Exception as e:
+            st.error(f"Error membaca sheet '{selected_sheet}': {e}")
+            return
+
+    else:
+        # Langsung baca CSV
+        try:
+            df = pd.read_csv(file_uploader)
+        except Exception as e:
+            st.error(f"Error membaca file CSV: {e}")
+            return
+
+    st.success(f"Data berhasil dimuat: {len(df)} baris, {len(df.columns)} kolom.")
     st.dataframe(df.head(10))
 
-    # Tombol untuk mengunduh data head
+    # Tombol unduh 100 baris pertama
     csv_head = df.head(100).to_csv(index=False).encode("utf-8")
     st.download_button(
         "⬇️ Unduh 100 Baris Pertama (CSV)",
@@ -45,9 +59,6 @@ def page_analysis():
 
     # --- 2. Info Dasar & Struktur Data ---
     st.subheader("ℹ️ Struktur Data & Tipe Kolom")
-    buffer_info = BytesIO()
-    df_info = df.copy()
-    # Gunakan DataFrame info via StringIO
     buf = BytesIO()
     df.info(buf=buf)
     s = buf.getvalue().decode()
@@ -78,15 +89,18 @@ def page_analysis():
     st.subheader("🚨 Analisis Nilai Hilang")
     missing_count = df.isnull().sum()
     missing_pct = (missing_count / len(df) * 100).round(2)
-    df_missing = pd.DataFrame(
-        {"kolom": df.columns, "missing_count": missing_count.values, "missing_pct": missing_pct.values}
-    ).sort_values(by="missing_pct", ascending=False)
+    df_missing = pd.DataFrame({
+        "Kolom": df.columns,
+        "Missing Count": missing_count.values,
+        "Missing (%)": missing_pct.values
+    }).sort_values(by="Missing (%)", ascending=False)
     st.dataframe(df_missing)
 
     # Plot missingness bar chart
-    fig_mis, ax_mis = plt.subplots()
+    fig_mis, ax_mis = plt.subplots(figsize=(6, min(0.5 * len(df_missing), 8)))
     sns.barplot(
-        x="missing_pct", y="kolom", data=df_missing[df_missing["missing_pct"] > 0], palette="Reds_r", ax=ax_mis
+        x="Missing (%)", y="Kolom", data=df_missing[df_missing["Missing (%)"] > 0],
+        palette="Reds_r", ax=ax_mis
     )
     ax_mis.set_xlabel("Persentase Nilai Hilang (%)")
     ax_mis.set_ylabel("Kolom")
@@ -138,11 +152,14 @@ def page_analysis():
         lower_bound = Q1 - 1.5 * IQR
         upper_bound = Q3 + 1.5 * IQR
         outliers = col_data[(col_data < lower_bound) | (col_data > upper_bound)]
-        st.markdown(f"**Outlier (Nilai < {lower_bound.round(2)} atau > {upper_bound.round(2)}):** {len(outliers)} nilai")
+        st.markdown(
+            f"**Outlier (Nilai < {lower_bound.round(2)} atau > {upper_bound.round(2)}):** "
+            f"{len(outliers)} nilai"
+        )
         if not outliers.empty:
             st.write(outliers.values[:10])  # tampilkan 10 outlier pertama
     else:
-        st.info("Tidak ada kolom numerik untuk ditampilkan distribusinya.")
+        st.info("Tidak ada kolom numerik untuk distribusi.")
 
     st.markdown("---")
 
@@ -152,35 +169,31 @@ def page_analysis():
         col_cat = st.selectbox("Pilih kolom kategorikal", cat_cols)
         top_n = st.slider("Tampilkan Top N Kategori Teratas", min_value=1, max_value=20, value=5)
         value_counts = df[col_cat].value_counts(dropna=False).head(top_n)
-        st.dataframe(pd.DataFrame({col_cat: value_counts.index, "count": value_counts.values}))
+        df_cat = pd.DataFrame({col_cat: value_counts.index, "Count": value_counts.values})
+        st.dataframe(df_cat)
 
-        fig_cat, ax_cat = plt.subplots()
+        fig_cat, ax_cat = plt.subplots(figsize=(6, min(0.5 * top_n, 6)))
         sns.barplot(x=value_counts.values, y=value_counts.index, palette="viridis", ax=ax_cat)
         ax_cat.set_xlabel("Count")
         ax_cat.set_ylabel(col_cat)
         ax_cat.set_title(f"Top {top_n} Kategori: {col_cat}")
         st.pyplot(fig_cat)
     else:
-        st.info("Tidak ada kolom kategorikal untuk dianalisa.")
+        st.info("Tidak ada kolom kategorikal untuk ditampilkan.")
 
     st.markdown("---")
 
     # --- 8. Ekspor Ringkasan Analisa ---
     st.subheader("⬇️ Unduh Ringkasan Analisa")
-    summary = {
-        "total_rows": len(df),
-        "total_columns": len(df.columns),
-        "numeric_columns": len(num_cols),
-        "categorical_columns": len(cat_cols),
-        "missing_summary": df_missing.to_dict(orient="records"),
-    }
     summary_df = pd.DataFrame({
         "Deskripsi": [
-            "Total Baris", "Total Kolom", "Jumlah Kolom Numerik", 
-            "Jumlah Kolom Kategorikal", "Info Missing Values"
+            "Total Baris", "Total Kolom", "Jumlah Kolom Numerik",
+            "Jumlah Kolom Kategorikal", "Kolom dengan Nilai Hilang (>0%)"
         ],
         "Nilai": [
-            len(df), len(df.columns), len(num_cols), len(cat_cols), "Gunakan tabel di atas"
+            len(df), len(df.columns), len(num_cols),
+            len(cat_cols),
+            ", ".join(df_missing[df_missing["Missing (%)"] > 0]["Kolom"].tolist()) or "Tidak ada"
         ]
     })
     csv_summary = summary_df.to_csv(index=False).encode("utf-8")
@@ -193,4 +206,3 @@ def page_analysis():
 
     st.markdown("---")
     st.markdown("✅ Analisa Data Lengkap Selesai.")
-
