@@ -9,6 +9,7 @@ def show_login():
         password = st.text_input(t("password", st.session_state.lang), type="password")
         submitted = st.form_submit_button(t("login_button", st.session_state.lang))
         if submitted:
+            # Ganti logika berikut dengan autentikasi yang kamu mau
             if username == "admin" and password == "surat123":
                 st.session_state.login_state = True
                 st.session_state.username = username
