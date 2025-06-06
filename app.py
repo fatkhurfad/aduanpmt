@@ -35,7 +35,8 @@ def show_main_app():
             t("dashboard_title"),
             t("generate_title"),
             t("analysis_title"),
-        ],
+            "Data Explorer",
+        ]
     )
 
     if page == t("dashboard_title"):
